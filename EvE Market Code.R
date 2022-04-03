@@ -21,12 +21,14 @@ library(tseries)
 
 #Test data frame
 EveMarketExt <- paste0("https://market.fuzzwork.co.uk/aggregates/?region=10000002&types=")
+
 #jita <- 10000002
 #amarr <- 30002187
 Market.json <- fromJSON(readLines(EveMarketExt), simplifyDataFrame = TRUE, flatten = TRUE)
 dfs <- lapply(Market.json, data.frame, stringsAsFactors = FALSE)
 Market.json <- bind_rows(dfs, .id = 'ID')
 
+#Initilize the Market ID data frame
 colnames(typeids) <- c('Type ID', 'Item Type', 'Market ID')
 MarketIDList <- unique(typeids$`Market ID`)
 
@@ -40,6 +42,7 @@ for (i in 1:length(typeids$`Market ID`)) {
   }
 }
 
+#Adds the second parent group IDs to the data frame
 ParentGroups2 <- c()
 for (i in 1:nrow(typeids)) {
   for(j in 1:nrow(invMarketGroups)) {
@@ -50,6 +53,7 @@ for (i in 1:nrow(typeids)) {
 }
 typeids$pID2 <- ParentGroups2
 
+#Adds the third parent group IDs
 ParentGroups3 <- c()
 for (i in 1:nrow(typeids)) {
   if (typeids$pID2[i] == 'None') {
@@ -64,6 +68,7 @@ for (i in 1:nrow(typeids)) {
 }
 typeids$pID3 <- ParentGroups3
 
+#Adds the fourth and final parent group IDs
 ParentGroups4 <- c()
 for (i in 1:nrow(typeids)) {
   if (typeids$pID3[i] == 'None') {
@@ -78,6 +83,7 @@ for (i in 1:nrow(typeids)) {
 }
 typeids$pID4 <- ParentGroups4
 x = 0
+
 #data.frame pre processing function
 preprocessMarketDataFrame <- function(dataFrame, parID) {
   library(formattable)
@@ -117,14 +123,21 @@ preprocessMarketDataFrame <- function(dataFrame, parID) {
     }
     progress(i, max.value = nrow(typeidsub), progress.bar = TRUE)
   }
+  
+  #Adds the order.total and ROI column to the complete data frame
   dataFrame <- cbind(ID = dataFrame$`ID`, itemType, dataFrame[, 2:17])
   dataFrame$order.total <- dataFrame$buy.orderCount + dataFrame$sell.orderCount
   dataFrame$ROI <- (dataFrame$sell.min - dataFrame$buy.max) / dataFrame$buy.max
+  
+  #Removes some outlier data points
   dataFrame <- subset(dataFrame, ROI < 100000 & ROI > 0)
+  
+  #Displays ROI as a percent
   dataFrame$ROI <- percent(dataFrame$ROI, 2)
   return(dataFrame)
 }
 
+#Creates a vector of all parent group 4 IDs
 p4All <- c()
 for (i in 1:nrow(typeids)) {
   if (typeids$pID2[i] == 'None') {
@@ -138,6 +151,7 @@ for (i in 1:nrow(typeids)) {
   }
 }
 
+#Adds the Ids to the type ID data frame
 typeids$`Parent ID` <- ParentGroups 
 typeids$`Top Market ID` <- as.numeric(p4All)
 
@@ -156,15 +170,17 @@ EveMarketExtGet <- paste(p4U, collapse = ',')
 EveMark <- paste(EveMarketExt, EveMarketExtGet, sep = '')
 
 
-#Creates the market data table
+#Creates the market data table based on specified parent ID then gets all items on the market at and under that ID
 Market.Pull <- function(ParentID) {
   library(jsonlite)
   library(progress)
+  
   n <- 200
   itemList <- c()
   
   itemList1 <- ''
   
+  #Creates the item list to be run thourgh
   for (i in 1:nrow(typeids)) {
     if (typeids$`Top Market ID`[i] == ParentID) {
       itemList <- append(itemList, typeids$`Type ID`[i])
@@ -177,12 +193,17 @@ Market.Pull <- function(ParentID) {
     }
   }
   print("Task 1 Done!")
+  
+  #Splits the item list into groups of 'n' items
   itemList <- split(itemList, sort(itemList%%n))
+  
+  #Reads the market api based on the market list info and creates a data frame
   Market.json <- list()
   itemList1 <- paste(itemList[["0"]], collapse = ',')
   marketGet <- paste(EveMarketExt, itemList1, sep = '')
   Market.json <- fromJSON(readLines(marketGet))
   dfs <- lapply(Market.json, data.frame, stringsAsFactors = FALSE)
+  
   for(i in 1:length(dfs)) {
     for(j in 1:16) {
       if (is.character(dfs[[i]][[j]]) == FALSE) {
@@ -192,6 +213,8 @@ Market.Pull <- function(ParentID) {
   }
   print("Task 2 Done!")
   Market.Sheet <- bind_rows(dfs, .id = 'ID')
+  
+  #Searches through the market data data frames created above and consolidates them into one data frame
   for (item in 2:length(itemList)) {
     itemList1 <- paste(itemList[[item]], collapse = ',')
     marketGet <- paste(EveMarketExt, itemList1, sep = '')
